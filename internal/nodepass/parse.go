@@ -30,6 +30,7 @@ type TunnelConfig struct {
 	Read                  string
 	Rate                  string
 	Slot                  string
+	IPSlot                string // 单个来源 IP 的最大连接数（不设置 = 不限制）
 	Proxy                 string // proxy protocol 支持 (0|1)
 	PoolType              string // 池类型 (0-TCP, 1-QUIC, 2-WebSocket, 3-HTTP/2)
 	Dial                  string // 出站源IP地址
@@ -217,6 +218,10 @@ func ParseTunnelURL(rawURL string) *models.Tunnel {
 				if slotVal, err := strconv.ParseInt(val, 10, 64); err == nil {
 					tunnel.Slot = &slotVal
 				}
+			case "ipslot":
+				if ipSlotVal, err := strconv.ParseInt(val, 10, 64); err == nil {
+					tunnel.IPSlot = &ipSlotVal
+				}
 			case "proxy":
 				// proxy_protocol 参数解析 (proxy=0|1)
 				switch val {
@@ -297,11 +302,73 @@ func ParseTunnelURL(rawURL string) *models.Tunnel {
 
 // - Insert/Create 时 - GORM 会调用字段的 Value() 方法进行序列化 ✅
 // - Update 时用 map - 当使用 Updates(map[string]interface{}) 时，GORM 不会调用字段的序列化方法，而是直接把 map中的值传给 SQLite 驱动
-func TunnelToMap(tunnel *models.Tunnel) map[string]interface{} {
+// TunnelToMap 把 Tunnel 转换成数据库更新用的完整 map（运行时列 + 配置列）。
+//
+// withConfig 表示调用方手里是否有一条完整的配置 URL：
+//   - true：这个 model 来自一条完整的配置 URL（实例回显的 URL、端点实例列表里的实例
+//     URL、或面板刚刚推送的 URL）。配置列以 URL 为准无条件写入 —— nil 确定地表示
+//     "该参数没有设置"，写成 SQL NULL；否则用户把参数清空后，数据库会一直留着旧值。
+//   - false：这次上报没有带 URL（例如实例没上报 config）。只更新运行时列，配置列原样
+//     保留 —— 否则一次没有 URL 的上报就会把整条隧道的配置清空。
+func TunnelToMap(tunnel *models.Tunnel, withConfig bool) map[string]interface{} {
+	updates := tunnelRuntimeToMap(tunnel)
+	if !withConfig {
+		return updates
+	}
+	for key, value := range TunnelConfigToMap(tunnel) {
+		updates[key] = value
+	}
+	return updates
+}
+
+// TunnelConfigToMap 返回完全由配置 URL 推导的那些列，无条件写入（nil → SQL NULL）。
+// 它与 BuildTunnelURLs 负责的参数集合一一对应：URL 里有什么这里就写什么，URL 里没有的
+// 这里就写 NULL。面板刚推送完 URL、等不到实例回显时，要写回数据库的也正是这一部分。
+func TunnelConfigToMap(tunnel *models.Tunnel) map[string]interface{} {
 	updates := map[string]interface{}{
-		"name":            tunnel.Name,
-		"status":          tunnel.Status,
-		"type":            tunnel.Type,
+		"type":           tunnel.Type,
+		"tunnel_address": tunnel.TunnelAddress,
+		"tunnel_port":    tunnel.TunnelPort,
+		"target_address": tunnel.TargetAddress,
+		"target_port":    tunnel.TargetPort,
+		"tls_mode":       tunnel.TLSMode,
+		"log_level":      tunnel.LogLevel,
+		"command_line":   tunnel.CommandLine,
+		"password":       tunnel.Password, // 直接使用指针类型
+		"cert_path":      tunnel.CertPath,
+		"key_path":       tunnel.KeyPath,
+		"min":            tunnel.Min,
+		"max":            tunnel.Max,
+		"mode":           tunnel.Mode,
+		"read":           tunnel.Read,
+		"rate":           tunnel.Rate,
+		"slot":           tunnel.Slot,
+		"ipslot":         tunnel.IPSlot,
+		"proxy_protocol": tunnel.ProxyProtocol,
+		"listen_type":    tunnel.ListenType,
+		"dial":           tunnel.Dial,
+		"dns":            tunnel.Dns,
+		"sni":            tunnel.Sni,
+		"block":          tunnel.Block,
+		"lbs":            tunnel.Lbs,
+		"pool_type":      tunnel.PoolType,
+	}
+	// extend_target_address 以 JSON 字符串存储，Update 走 map 时 GORM 不会自动序列化
+	if tunnel.ExtendTargetAddress != nil {
+		if extendAddrJSON, err := json.Marshal(tunnel.ExtendTargetAddress); err == nil {
+			updates["extend_target_address"] = string(extendAddrJSON)
+		}
+	} else {
+		updates["extend_target_address"] = nil
+	}
+	return updates
+}
+
+// tunnelRuntimeToMap 返回与实例运行状态相关的列（流量、状态、连接池、标签等）。
+// 它们由 SSE 事件或端点实例列表提供，nil 只表示"这次上报没带这个字段"，
+// 所以保持 nil 保护：拿不到就不写，保留数据库里的旧值。
+func tunnelRuntimeToMap(tunnel *models.Tunnel) map[string]interface{} {
+	updates := map[string]interface{}{
 		"tcp_rx":          tunnel.TCPRx,
 		"tcp_tx":          tunnel.TCPTx,
 		"udp_rx":          tunnel.UDPRx,
@@ -310,50 +377,20 @@ func TunnelToMap(tunnel *models.Tunnel) map[string]interface{} {
 		"udps":            tunnel.UDPs,
 		"pool":            tunnel.Pool,
 		"ping":            tunnel.Ping,
-		"tunnel_address":  tunnel.TunnelAddress,
-		"tunnel_port":     tunnel.TunnelPort,
-		"target_address":  tunnel.TargetAddress,
-		"target_port":     tunnel.TargetPort,
-		"tls_mode":        tunnel.TLSMode,
-		"log_level":       tunnel.LogLevel,
-		"command_line":    tunnel.CommandLine,
-		"password":        tunnel.Password, // 直接使用指针类型
-		"restart":         tunnel.Restart,  // 添加restart字段更新
+		"restart":         tunnel.Restart, // 添加restart字段更新
 		"last_event_time": tunnel.LastEventTime,
 		"updated_at":      time.Now(),
-		"proxy_protocol":  tunnel.ProxyProtocol,
-		"config_line":     tunnel.ConfigLine,
-		"listen_type":     tunnel.ListenType,
 	}
-
-	if tunnel.CertPath != nil {
-		updates["cert_path"] = tunnel.CertPath
+	// name/status 的空值只表示"这次上报没带"，不能用来覆盖库里的别名和状态
+	if tunnel.Name != "" {
+		updates["name"] = tunnel.Name
 	}
-	if tunnel.KeyPath != nil {
-		updates["key_path"] = tunnel.KeyPath
+	if tunnel.Status != "" {
+		updates["status"] = tunnel.Status
 	}
-	if tunnel.Min != nil {
-		updates["min"] = tunnel.Min
-	}
-	if tunnel.Max != nil {
-		updates["max"] = tunnel.Max
-	}
-
-	// 处理新字段
-	if tunnel.Mode != nil {
-		updates["mode"] = tunnel.Mode
-	}
-	if tunnel.Read != nil {
-		updates["read"] = tunnel.Read
-	}
-	if tunnel.Rate != nil {
-		updates["rate"] = tunnel.Rate
-	}
-	if tunnel.Slot != nil {
-		updates["slot"] = tunnel.Slot
-	}
-	if tunnel.ProxyProtocol != nil {
-		updates["proxy_protocol"] = tunnel.ProxyProtocol
+	// config_line 是核心自己生成的配置 URL；实例没上报时保留旧值，不要写成 NULL
+	if tunnel.ConfigLine != nil {
+		updates["config_line"] = tunnel.ConfigLine
 	}
 	// Update 时 GORM 不会自动调用序列化器，需要手动序列化为 JSON 字符串
 	if tunnel.Tags != nil {
@@ -374,33 +411,6 @@ func TunnelToMap(tunnel *models.Tunnel) map[string]interface{} {
 	} else {
 		// peer 为 nil 时，清空 service_sid
 		updates["service_sid"] = nil
-	}
-	if tunnel.ConfigLine != nil {
-		updates["config_line"] = tunnel.ConfigLine
-	}
-	if tunnel.Dial != nil {
-		updates["dial"] = tunnel.Dial
-	}
-	if tunnel.ExtendTargetAddress != nil {
-		if extendAddrJSON, err := json.Marshal(tunnel.ExtendTargetAddress); err == nil {
-			updates["extend_target_address"] = string(extendAddrJSON)
-		}
-	}
-	// 处理新字段
-	if tunnel.PoolType != nil {
-		updates["pool_type"] = tunnel.PoolType
-	}
-	if tunnel.Dns != nil {
-		updates["dns"] = tunnel.Dns
-	}
-	if tunnel.Sni != nil {
-		updates["sni"] = tunnel.Sni
-	}
-	if tunnel.Block != nil {
-		updates["block"] = tunnel.Block
-	}
-	if tunnel.Lbs != nil {
-		updates["lbs"] = tunnel.Lbs
 	}
 	return updates
 }
@@ -467,6 +477,7 @@ func ParseTunnelConfig(rawURL string) *TunnelConfig {
 	cfg.Read = query.Get("read")
 	cfg.Rate = query.Get("rate")
 	cfg.Slot = query.Get("slot")
+	cfg.IPSlot = query.Get("ipslot")
 	cfg.Proxy = query.Get("proxy")
 	cfg.PoolType = query.Get("type")
 	// dial 参数需要URL解码，因为可能包含IP地址等特殊字符
@@ -597,6 +608,10 @@ func (c *TunnelConfig) BuildTunnelConfigURL() string {
 
 	if c.Slot != "" {
 		queryParams = append(queryParams, fmt.Sprintf("slot=%s", c.Slot))
+	}
+
+	if c.IPSlot != "" {
+		queryParams = append(queryParams, fmt.Sprintf("ipslot=%s", c.IPSlot))
 	}
 
 	if c.Proxy != "" {
@@ -792,6 +807,9 @@ func BuildTunnelURLs(tunnel models.Tunnel) string {
 
 	if tunnel.Slot != nil {
 		queryParams = append(queryParams, fmt.Sprintf("slot=%d", *tunnel.Slot))
+	}
+	if tunnel.IPSlot != nil {
+		queryParams = append(queryParams, fmt.Sprintf("ipslot=%d", *tunnel.IPSlot))
 	}
 	if tunnel.Dial != nil {
 		queryParams = append(queryParams, fmt.Sprintf("dial=%s", url.QueryEscape(*tunnel.Dial)))

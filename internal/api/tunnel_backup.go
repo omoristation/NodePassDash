@@ -42,6 +42,7 @@ type BackupInstance struct {
 	Min           *int64             `json:"min,omitempty"`
 	Max           *int64             `json:"max,omitempty"`
 	Slot          *int64             `json:"slot,omitempty"`
+	IPSlot        *int64             `json:"ipslot,omitempty"`
 	ProxyProtocol *bool              `json:"proxyProtocol,omitempty"`
 	Tags          *map[string]string `json:"tags,omitempty"`
 	Dial          *string            `json:"dial,omitempty"`
@@ -113,6 +114,7 @@ func tunnelToBackupInstance(t models.Tunnel) BackupInstance {
 		Min:                 t.Min,
 		Max:                 t.Max,
 		Slot:                t.Slot,
+		IPSlot:              t.IPSlot,
 		ProxyProtocol:       t.ProxyProtocol,
 		Tags:                t.Tags,
 		Dial:                t.Dial,

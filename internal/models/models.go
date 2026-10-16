@@ -88,6 +88,9 @@ type Tunnel struct {
 	// 最大连接数限制
 	Slot *int64 `json:"slot,omitempty" gorm:"column:slot"`
 
+	// 单个来源 IP 的最大连接数限制（超限时淘汰该 IP 最空闲的连接；不设置 = 不限制）
+	IPSlot *int64 `json:"ipslot,omitempty" gorm:"column:ipslot"`
+
 	// Proxy Protocol 支持
 	ProxyProtocol *bool `json:"proxyProtocol,omitempty" gorm:"column:proxy_protocol"`
 

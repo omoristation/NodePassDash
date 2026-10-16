@@ -1127,6 +1127,9 @@ func (s *Service) CreateTunnelAndWait(req CreateTunnelRequest, timeout time.Dura
 	if req.Slot != nil {
 		queryParams = append(queryParams, fmt.Sprintf("slot=%d", *req.Slot))
 	}
+	if req.IPSlot != nil {
+		queryParams = append(queryParams, fmt.Sprintf("ipslot=%d", *req.IPSlot))
+	}
 	if req.ProxyProtocol != nil {
 		proxyVal := 0
 		if *req.ProxyProtocol {
@@ -1190,6 +1193,9 @@ func (s *Service) CreateTunnelAndWait(req CreateTunnelRequest, timeout time.Dura
 		}
 		if req.Slot != nil {
 			updateFields["slot"] = int64(*req.Slot)
+		}
+		if req.IPSlot != nil {
+			updateFields["ipslot"] = int64(*req.IPSlot)
 		}
 		if req.Rate != nil {
 			updateFields["rate"] = int64(*req.Rate)

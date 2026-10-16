@@ -261,11 +261,18 @@ func buildTunnel(payload SSEResp) *models.Tunnel {
 	tunnel.LastEventTime = models.NullTime{Time: payload.TimeStamp, Valid: true}
 	tunnel.EnableLogStore = true
 	tunnel.Restart = payload.Instance.Restart
-	tunnel.Name = *payload.Instance.Alias
+	// 实例没上报这些字段时保留空值/原有值：不要 panic，也不要把配置列写成 NULL
+	if payload.Instance.Alias != nil {
+		tunnel.Name = *payload.Instance.Alias
+	}
 	tunnel.Status = models.TunnelStatus(payload.Instance.Status)
-	tunnel.ProxyProtocol = payload.Instance.ProxyProtocol
-	tunnel.Tags = payload.Instance.Meta.Tags
-	tunnel.Peer = payload.Instance.Meta.Peer
+	if payload.Instance.ProxyProtocol != nil {
+		tunnel.ProxyProtocol = payload.Instance.ProxyProtocol
+	}
+	if payload.Instance.Meta != nil {
+		tunnel.Tags = payload.Instance.Meta.Tags
+		tunnel.Peer = payload.Instance.Meta.Peer
+	}
 
 	// 同步设置 service_sid 字段
 	if tunnel.Peer != nil && tunnel.Peer.SID != nil && *tunnel.Peer.SID != "" {
@@ -292,18 +299,28 @@ func (s *Service) handleCreateEvent(payload SSEResp) {
 	tunnel := buildTunnel(payload)
 	// 使用 OnConflict 子句处理冲突情况
 	// 如果 endpoint_id + instance_id 已存在，则更新相关字段
+	// 冲突时要覆盖的列。配置列只在实例上报了 URL 时才覆盖：没上报 URL 就说明这次
+	// 事件里没有配置信息，不能据此把库里已有的配置清空。
+	runtimeColumns := []string{
+		"tcp_rx", "tcp_tx", "udp_rx", "udp_tx", "tcps", "udps", "pool", "ping",
+		"restart", "last_event_time", "updated_at",
+		"peer", "service_sid", // 添加 peer 和 service_sid 字段同步
+	}
+	configColumns := []string{
+		"tunnel_address", "tunnel_port", "target_address", "target_port",
+		"tls_mode", "log_level", "command_line", "password", "cert_path", "key_path",
+		"min", "max", "mode", "read", "rate", "slot", "ipslot",
+		"proxy_protocol", "listen_type", "dial", "dns", "sni", "block", "lbs", "pool_type",
+	}
+	if payload.Instance.URL != "" {
+		runtimeColumns = append(runtimeColumns, configColumns...)
+	}
 	if err := s.db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{
 			{Name: "endpoint_id"},
 			{Name: "instance_id"},
 		},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"tcp_rx", "tcp_tx", "udp_rx", "udp_tx", "tcps", "udps", "pool", "ping",
-			"tunnel_address", "tunnel_port", "target_address", "target_port",
-			"tls_mode", "log_level", "command_line", "password", "cert_path", "key_path",
-			"min", "max", "mode", "read", "rate", "restart", "last_event_time", "updated_at",
-			"peer", "service_sid", // 添加 peer 和 service_sid 字段同步
-		}),
+		DoUpdates: clause.AssignmentColumns(runtimeColumns),
 	}).Create(&tunnel).Error; err != nil {
 		log.Errorf("[Master-%d]创建/更新隧道记录 %s 失败: %v", payload.EndpointID, payload.Instance.ID, err)
 	} else {
@@ -430,7 +447,8 @@ func (s *Service) handleShutdownEvent(payload SSEResp) {
 func (s *Service) updateTunnelRuntimeInfo(payload SSEResp) {
 	// 准备更新字段
 	tunnel := buildTunnel(payload)
-	updates := nodepass.TunnelToMap(tunnel)
+	// 实例上报了 URL 才更新配置列；没上报时只更新运行时列
+	updates := nodepass.TunnelToMap(tunnel, payload.Instance.URL != "")
 	// 更新 tunnel 表
 	result := s.db.Model(&models.Tunnel{}).
 		Where("endpoint_id = ? AND instance_id = ?", payload.EndpointID, payload.Instance.ID).

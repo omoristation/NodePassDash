@@ -730,6 +730,10 @@ func (s *TunnelShared) copyTunnel(src *models.Tunnel) *models.Tunnel {
 		slot := *src.Slot
 		dst.Slot = &slot
 	}
+	if src.IPSlot != nil {
+		ipSlot := *src.IPSlot
+		dst.IPSlot = &ipSlot
+	}
 	if src.ProxyProtocol != nil {
 		pp := *src.ProxyProtocol
 		dst.ProxyProtocol = &pp

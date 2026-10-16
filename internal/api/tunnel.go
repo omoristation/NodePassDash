@@ -842,6 +842,12 @@ func (h *TunnelHandler) HandleGetTunnelDetails(c *gin.Context) {
 			}
 			return nil
 		}(),
+		"ipslot": func() interface{} {
+			if tunnel.IPSlot != nil {
+				return *tunnel.IPSlot
+			}
+			return nil
+		}(),
 		"poolType": func() interface{} {
 			if tunnel.PoolType != nil {
 				return *tunnel.PoolType
@@ -896,6 +902,7 @@ func (h *TunnelHandler) HandleGetTunnelDetails(c *gin.Context) {
 			"read":          parsedConfig.Read,
 			"rate":          parsedConfig.Rate,
 			"slot":          parsedConfig.Slot,
+			"ipslot":        parsedConfig.IPSlot,
 			"proxy":         parsedConfig.Proxy,
 			"poolType":      parsedConfig.PoolType,
 			"dns":           parsedConfig.Dns,
@@ -2872,18 +2879,22 @@ func (h *TunnelHandler) HandleUpdateTunnelV3(c *gin.Context) {
 	}
 
 	if !success {
-		// 超时，直接更新本地数据库，处理min/max/slot字段
-		// 构建新字段的更新值
-		// 准备更新字段
-		updates := nodepass.TunnelToMap(&raw.Tunnel)
-		// 更新 tunnel 表
+		// 超时：SSE 还没把新配置刷进数据库，这里直接把刚推送到实例的 URL 落库。
+		// 只写配置列（运行时字段如流量/状态不在请求体里，写下去会被清零）；
+		// command_line 也要一并落库，否则会被写空。
+		raw.CommandLine = commandLine
+		updates := nodepass.TunnelConfigToMap(&raw.Tunnel)
+		// 更新 tunnel 表（按主键定位，请求体里可能没有 endpoint_id）
 		result := h.tunnelService.GormDB().Model(&models.Tunnel{}).
-			Where("endpoint_id = ? AND instance_id = ?", raw.EndpointID, instanceID).
+			Where("id = ?", raw.ID).
 			Updates(updates)
 
 		if result.Error != nil {
-			log.Errorf("[Master-%d]更新隧道 %s 运行时信息失败: %v", raw.EndpointID, instanceID, result.Error)
+			log.Errorf("[Master-%d]更新隧道 %s 运行时信息失败: %v", endpoint.ID, instanceID, result.Error)
 			return
+		}
+		if result.RowsAffected == 0 {
+			log.Warnf("[Master-%d]超时兜底更新隧道 %s (id=%d) 未命中任何行", endpoint.ID, instanceID, raw.ID)
 		}
 	}
 

@@ -638,12 +638,17 @@ func buildTunnelFromInstance(endpointID int64, inst nodepass.InstanceResult) *mo
 	// tunnel.LastEventTime = &payload.TimeStamp
 	tunnel.EnableLogStore = true
 	tunnel.Restart = inst.Restart
-	tunnel.Name = *inst.Alias
+	// 实例没上报这些字段时不要 panic，也不要把别名/标签清空
+	if inst.Alias != nil {
+		tunnel.Name = *inst.Alias
+	}
 	tunnel.Status = models.TunnelStatus(inst.Status)
 	tunnel.ProxyProtocol = inst.ProxyProtocol
 
-	tunnel.Tags = inst.Meta.Tags
-	tunnel.Peer = inst.Meta.Peer
+	if inst.Meta != nil {
+		tunnel.Tags = inst.Meta.Tags
+		tunnel.Peer = inst.Meta.Peer
+	}
 
 	// 同步设置 service_sid 字段
 	if tunnel.Peer != nil && tunnel.Peer.SID != nil {
@@ -715,7 +720,8 @@ func (h *EndpointHandler) refreshTunnels(endpointID int64) error {
 				log.Errorf("[API] 端点 %d: 查询隧道 %s 失败: %v", endpointID, inst.ID, err)
 				return fmt.Errorf("查询隧道失败: %v", err)
 			} else {
-				updates := nodepass.TunnelToMap(tunnel)
+				// 实例上报了 URL 才更新配置列；没上报时只更新运行时列
+				updates := nodepass.TunnelToMap(tunnel, inst.URL != "")
 				if err = tx.Model(&models.Tunnel{}).Where("id = ?", existingTunnel.ID).Updates(updates).Error; err != nil {
 					log.Errorf("[API] 端点 %d: 更新隧道 %s 失败: %v", endpointID, inst.ID, err)
 					return fmt.Errorf("更新隧道失败: %v", err)
