@@ -148,6 +148,7 @@ export default function CreateTunnelPage() {
     min: "",
     max: "",
     slot: "", // 最大连接数限制
+    ipslot: "", // 单IP连接数限制
     // 新增字段
     mode: "0", // 服务端/客户端模式：服务端默认0，客户端默认1
     read: "", // 数据读取超时
@@ -332,6 +333,7 @@ export default function CreateTunnelPage() {
             return undefined;
           })(),
           slot: formData.slot ? parseInt(formData.slot) : undefined,
+          ipslot: formData.ipslot ? parseInt(formData.ipslot) : undefined,
           // 新增字段
           mode: formData.mode ? Number(formData.mode) : undefined, // 修复：转换为数字类型
           read: (() => {
@@ -954,8 +956,8 @@ export default function CreateTunnelPage() {
         <CardBody className="p-6 space-y-6">
           {/* 连接池配置 */}
           {formData.type === "server" ? (
-            // 服务端模式：五个input框并排
-            <div className="grid grid-cols-5 gap-4">
+            // 服务端模式：六个input框并排
+            <div className="grid grid-cols-6 gap-4">
               <Input
                 label="连接池最大容量(可选)"
                 placeholder="1024(默认值)"
@@ -967,6 +969,12 @@ export default function CreateTunnelPage() {
                 placeholder="100"
                 value={formData.slot}
                 onChange={(e) => handleInputChange("slot", e.target.value)}
+              />
+              <Input
+                label="单IP连接数限制(可选)"
+                placeholder="不填=不限制"
+                value={formData.ipslot}
+                onChange={(e) => handleInputChange("ipslot", e.target.value)}
               />
               <Input
                 endContent={
@@ -1019,8 +1027,8 @@ export default function CreateTunnelPage() {
             </div>
           ) : // 客户端模式
           formData.mode === "1" ? (
-            // 模式1：五个input框并排（最小容量、最大连接数、数据读取超时、速率限制、Proxy Protocol）
-            <div className="grid grid-cols-5 gap-4">
+            // 模式1：六个input框并排（最小容量、最大连接数、单IP连接数、数据读取超时、速率限制、Proxy Protocol）
+            <div className="grid grid-cols-6 gap-4">
               <Input
                 label="连接池最小容量(可选)"
                 placeholder="64(默认值)"
@@ -1032,6 +1040,12 @@ export default function CreateTunnelPage() {
                 placeholder="100"
                 value={formData.slot}
                 onChange={(e) => handleInputChange("slot", e.target.value)}
+              />
+              <Input
+                label="单IP连接数限制(可选)"
+                placeholder="不填=不限制"
+                value={formData.ipslot}
+                onChange={(e) => handleInputChange("ipslot", e.target.value)}
               />
               <Input
                 endContent={
@@ -1083,13 +1097,19 @@ export default function CreateTunnelPage() {
               </Select>
             </div>
           ) : (
-            // 模式2：四个input框并排
-            <div className="grid grid-cols-4 gap-4">
+            // 模式2：五个input框并排
+            <div className="grid grid-cols-5 gap-4">
               <Input
                 label="最大连接数限制(可选)"
                 placeholder="100"
                 value={formData.slot}
                 onChange={(e) => handleInputChange("slot", e.target.value)}
+              />
+              <Input
+                label="单IP连接数限制(可选)"
+                placeholder="不填=不限制"
+                value={formData.ipslot}
+                onChange={(e) => handleInputChange("ipslot", e.target.value)}
               />
               <Input
                 endContent={
@@ -1291,6 +1311,13 @@ export default function CreateTunnelPage() {
                     {formData.slot}
                   </p>
                 )}
+                {formData.ipslot && (
+                  <p>
+                    <span className="inline-block w-2 h-2 rounded-full bg-success mr-2" />
+                    <span className="font-semibold">单IP连接数限制：</span>{" "}
+                    {formData.ipslot}
+                  </p>
+                )}
                 {formData.read && (
                   <p>
                     <span className="inline-block w-2 h-2 rounded-full bg-success mr-2" />
@@ -1365,6 +1392,9 @@ export default function CreateTunnelPage() {
                   }
                   if (formData.slot) {
                     params.push(`slot=${formData.slot}`);
+                  }
+                  if (formData.ipslot) {
+                    params.push(`ipslot=${formData.ipslot}`);
                   }
 
                   // 添加新增参数

@@ -415,6 +415,8 @@
       "rateLimitUnit": "Mbps",
       "maxConnections": "Max Connections Limit",
       "maxConnectionsPlaceholder": "100",
+      "ipMaxConnections": "Per-IP Connections Limit",
+      "ipMaxConnectionsPlaceholder": "empty = unlimited",
       "proxyProtocol": "Proxy Protocol",
       "poolType": "Pool Type",
       "weight": "Weight (higher first)",
@@ -659,6 +661,10 @@
         "label": "Max Connections Limit",
         "notSet": "Not Set",
         "default": "(default)"
+      },
+      "ipMaxConnections": {
+        "label": "Per-IP Connections Limit",
+        "notSet": "Not Set"
       },
       "tls": {
         "label": "TLS Settings",

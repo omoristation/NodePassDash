@@ -146,6 +146,7 @@ export default function SimpleCreateTunnelModal({
     min: "",
     max: "",
     slot: "", // 最大连接数限制
+    ipslot: "", // 单IP连接数限制
     certPath: "",
     keyPath: "",
     // 新增字段
@@ -214,6 +215,7 @@ export default function SimpleCreateTunnelModal({
             min: tunnel.min != null ? String(tunnel.min) : "",
             max: tunnel.max != null ? String(tunnel.max) : "",
             slot: tunnel.slot != null ? String(tunnel.slot) : "",
+            ipslot: tunnel.ipslot != null ? String(tunnel.ipslot) : "",
             certPath: tunnel.certPath || "",
             keyPath: tunnel.keyPath || "",
             apiEndpoint: String(tunnel.endpoint?.id || prev.apiEndpoint),
@@ -292,6 +294,7 @@ export default function SimpleCreateTunnelModal({
       min,
       max,
       slot,
+      ipslot,
       certPath,
       keyPath,
       mode,
@@ -392,6 +395,7 @@ export default function SimpleCreateTunnelModal({
               ? parseInt(max)
               : undefined,
           slot: slot !== "" ? parseInt(slot) : undefined,
+          ipslot: ipslot !== "" ? parseInt(ipslot) : undefined,
           // 新增字段
           mode: mode != null ? Number(mode) : undefined,
           read: read || undefined,
@@ -984,6 +988,13 @@ export default function SimpleCreateTunnelModal({
                               type="number"
                               value={formData.slot}
                               onValueChange={(v) => handleField("slot", v ? String(v) : "")}
+                            />
+                            <Input
+                              label={t("simpleCreate.fields.ipMaxConnections")}
+                              placeholder={t("simpleCreate.fields.ipMaxConnectionsPlaceholder")}
+                              type="number"
+                              value={formData.ipslot}
+                              onValueChange={(v) => handleField("ipslot", v ? String(v) : "")}
                             />
                             {proxyProtocolSelect}
                             {/* 池类型 */}

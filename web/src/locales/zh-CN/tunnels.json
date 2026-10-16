@@ -415,6 +415,8 @@
       "rateLimitUnit": "Mbps",
       "maxConnections": "最大连接数限制",
       "maxConnectionsPlaceholder": "100",
+      "ipMaxConnections": "单IP连接数限制",
+      "ipMaxConnectionsPlaceholder": "不填=不限制",
       "proxyProtocol": "Proxy Protocol",
       "poolType": "池类型",
       "weight": "权重(越大越前)",
@@ -659,6 +661,10 @@
         "label": "最大连接数限制",
         "notSet": "未设置",
         "default": "(默认)"
+      },
+      "ipMaxConnections": {
+        "label": "单IP连接数限制",
+        "notSet": "未设置"
       },
       "tls": {
         "label": "TLS 设置",

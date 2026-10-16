@@ -106,6 +106,7 @@ interface TunnelInfo {
   read?: string;
   restart: boolean;
   slot?: number | null;
+  ipslot?: number | null;
   poolType?: number | null;
   dial?: string | null;
   dns?: string | null;
@@ -1961,6 +1962,26 @@ export default function TunnelDetailPage() {
                             </>
                           )
                           : t("details.instanceInfo.maxConnections.notSet")}
+                    </span>
+                  }
+                />
+                <CellValue
+                  icon={
+                    <Icon
+                      className="text-default-600"
+                      height={18}
+                      icon="lucide:users"
+                      width={18}
+                    />
+                  }
+                  label={t("details.instanceInfo.ipMaxConnections.label")}
+                  value={
+                    <span className="font-mono text-sm">
+                      {tunnelInfo.ipslot !== undefined && tunnelInfo.ipslot !== null
+                        ? tunnelInfo.ipslot
+                        : tunnelInfo.config?.ipslot
+                          ? tunnelInfo.config.ipslot
+                          : t("details.instanceInfo.ipMaxConnections.notSet")}
                     </span>
                   }
                 />
