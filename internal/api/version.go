@@ -229,14 +229,14 @@ func (h *VersionHandler) HandleUpdateProgress(c *gin.Context) {
 
 // DBInfo 数据库信息结构
 type DBInfo struct {
-	Driver   string `json:"driver"`            // "sqlite" | "postgres"
-	Version  string `json:"version"`           // 数据库服务端版本字符串
-	Database string `json:"database"`          // SQLite 文件路径或 PG 库名
-	Size     int64  `json:"size"`              // 字节数，仅 SQLite 有效
-	SizeText string `json:"sizeText"`          // 人类可读大小
-	Host     string `json:"host,omitempty"`    // PG host:port
-	WALMode  *bool  `json:"walMode,omitempty"` // SQLite WAL 模式
-	Tables   int64  `json:"tables"`            // 表数量
+	Driver   string `json:"driver"`             // "sqlite" | "postgres"
+	Version  string `json:"version"`            // 数据库服务端版本字符串
+	Database string `json:"database"`           // SQLite 文件路径或 PG 库名
+	Size     int64  `json:"size"`               // 字节数，仅 SQLite 有效
+	SizeText string `json:"sizeText"`           // 人类可读大小
+	Host     string `json:"host,omitempty"`     // PG host:port
+	WALMode  *bool  `json:"walMode,omitempty"`  // SQLite WAL 模式
+	Tables   int64  `json:"tables"`             // 表数量
 }
 
 // HandleGetDBInfo 返回当前数据库的简单信息
@@ -367,7 +367,7 @@ func (h *VersionHandler) HandleCheckUpdate(c *gin.Context) {
 		if release.Draft {
 			continue // 跳过草稿版本
 		}
-
+		
 		if release.Prerelease {
 			// 这是测试版
 			if betaRelease == nil {
@@ -379,7 +379,7 @@ func (h *VersionHandler) HandleCheckUpdate(c *gin.Context) {
 				stableRelease = &release
 			}
 		}
-
+		
 		// 如果都找到了，可以提前结束
 		if stableRelease != nil && betaRelease != nil {
 			break
@@ -447,7 +447,6 @@ func (h *VersionHandler) HandleAutoUpdate(c *gin.Context) {
 
 	// 同步清空上一次的失败原因,避免前端轮询到旧错误
 	h.setLastUpdateError("")
-
 	// 立即响应请求，避免阻塞
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -1198,9 +1197,8 @@ func parseVersion(v string) ([]int, int) {
 // 规则：先比对 major/minor/patch；base 相同时，正式版 > rc > beta > alpha，
 // 同类型再按编号比大小。
 // 例：current=v4.0.2, latest=v4.0.2-beta1 → 无更新（正式版 > beta）。
-//
-//	current=v4.0.2-beta1, latest=v4.0.2-beta2 → 有更新。
-//	current=v4.0.2-beta1, latest=v4.0.2 → 有更新（正式版更高）。
+//    current=v4.0.2-beta1, latest=v4.0.2-beta2 → 有更新。
+//    current=v4.0.2-beta1, latest=v4.0.2 → 有更新（正式版更高）。
 func (h *VersionHandler) compareVersions(current, latest string) bool {
 	current = strings.TrimPrefix(strings.TrimSpace(current), "v")
 	if current == "dev" || current == "" {
