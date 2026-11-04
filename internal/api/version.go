@@ -367,7 +367,7 @@ func (h *VersionHandler) HandleCheckUpdate(c *gin.Context) {
 		if release.Draft {
 			continue // 跳过草稿版本
 		}
-
+		
 		if release.Prerelease {
 			// 这是测试版
 			if betaRelease == nil {
@@ -379,7 +379,7 @@ func (h *VersionHandler) HandleCheckUpdate(c *gin.Context) {
 				stableRelease = &release
 			}
 		}
-
+		
 		// 如果都找到了，可以提前结束
 		if stableRelease != nil && betaRelease != nil {
 			break
@@ -427,6 +427,7 @@ func (h *VersionHandler) HandleAutoUpdate(c *gin.Context) {
 	// 检测部署方式。这里不再因为 canUpdate=false 直接拒绝：能否写入要等
 	// 更新流程实际检查，失败原因通过 updateError 返回给前端展示。
 	deployInfo := h.detectDeploymentMethod()
+
 
 	// 解析请求体获取更新通道（stable / beta）
 	var req struct {
@@ -977,6 +978,7 @@ func executableDirWritable(executable string) error {
 // 这里直接在目标目录创建并删除一个临时文件来验证真实权限；结果只用于部署
 // 信息展示，不再阻止用户点击更新（失败时更新流程会返回具体原因）。
 func (h *VersionHandler) isBinaryDeployment() bool {
+	// 检查当前可执行文件是否可写
 	executable, err := os.Executable()
 	if err != nil {
 		return false
@@ -985,6 +987,7 @@ func (h *VersionHandler) isBinaryDeployment() bool {
 		executable = resolved
 	}
 
+	// 检查文件权限
 	info, err := os.Stat(executable)
 	if err != nil || info.IsDir() {
 		return false
