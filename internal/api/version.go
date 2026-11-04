@@ -6,8 +6,10 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -18,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"NodePassDash/internal/db"
@@ -428,7 +431,6 @@ func (h *VersionHandler) HandleAutoUpdate(c *gin.Context) {
 	// 更新流程实际检查，失败原因通过 updateError 返回给前端展示。
 	deployInfo := h.detectDeploymentMethod()
 
-
 	// 解析请求体获取更新通道（stable / beta）
 	var req struct {
 		Type string `json:"type"`
@@ -648,7 +650,7 @@ func (h *VersionHandler) performBinaryReplace(latest *GitHubRelease, isDocker bo
 	// 提前验证程序目录是否可写：下载、解压、备份 rename 和替换 rename 都要
 	// 在这里落盘。目录不可写时立刻返回明确原因，而不是下载完几十 MB 才失败。
 	if err := executableDirWritable(currentExe); err != nil {
-		msg := fmt.Sprintf("当前用户对程序目录 %s 没有写权限，无法自动更新: %v（请以 root 运行服务或调整目录权限）", filepath.Dir(currentExe), err)
+		msg := describeWriteFailure(filepath.Dir(currentExe), err)
 		h.logUpdateProgress("error", msg)
 		return UpdateResult{
 			Success: false,
@@ -967,6 +969,26 @@ func executableDirWritable(executable string) error {
 	probe.Close()
 	_ = os.Remove(name)
 	return nil
+}
+
+// describeWriteFailure 把目录可写性探测的失败翻译成可执行的排查提示。
+//
+// EROFS（read-only file system）和 EACCES（权限不足）是两种完全不同的情况：
+// 前者是挂载点只读（systemd 单元开启了 ProtectSystem=strict / ReadOnlyPaths，
+// 或文件系统以 ro 挂载），root 权限同样无法绕过，改目录权限没有任何作用；
+// 后者才是运行用户没有写权限。混在一起提示会把排查引向错误方向。
+func describeWriteFailure(dir string, err error) string {
+	switch {
+	case errors.Is(err, syscall.EROFS):
+		return fmt.Sprintf("程序目录 %s 位于只读挂载点，无法写入（%v）。root 权限也无法绕过只读挂载："+
+			"若服务由 systemd 托管，请检查单元中的 ProtectSystem=strict / ReadOnlyPaths，并添加 ReadWritePaths=%s；"+
+			"若该目录所在文件系统本身以 ro 挂载（fstab 设置，或文件系统出错后被自动重挂为只读），"+
+			"请先在宿主机执行 mount -o remount,rw 恢复后重试（dmesg 可确认是否有重挂记录）", dir, err, dir)
+	case errors.Is(err, fs.ErrPermission):
+		return fmt.Sprintf("当前用户对程序目录 %s 没有写权限，无法自动更新: %v（请以 root 运行服务或调整目录权限）", dir, err)
+	default:
+		return fmt.Sprintf("无法在程序目录 %s 创建文件，自动更新要求该目录可写: %v", dir, err)
+	}
 }
 
 // isBinaryDeployment 检查是否是二进制部署。
