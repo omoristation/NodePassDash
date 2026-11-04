@@ -6,10 +6,8 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -20,7 +18,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"NodePassDash/internal/db"
@@ -427,9 +424,16 @@ func (h *VersionHandler) HandleGetDeploymentInfo(c *gin.Context) {
 
 // HandleAutoUpdate 自动更新
 func (h *VersionHandler) HandleAutoUpdate(c *gin.Context) {
-	// 检测部署方式。这里不再因为 canUpdate=false 直接拒绝：能否写入要等
-	// 更新流程实际检查，失败原因通过 updateError 返回给前端展示。
+	// 检测部署方式
 	deployInfo := h.detectDeploymentMethod()
+
+	if !deployInfo.CanUpdate {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "当前部署方式不支持自动更新",
+		})
+		return
+	}
 
 	// 解析请求体获取更新通道（stable / beta）
 	var req struct {
@@ -641,22 +645,7 @@ func (h *VersionHandler) performBinaryReplace(latest *GitHubRelease, isDocker bo
 		}
 	}
 
-	// 解析软链接：更新的应是服务实际启动的那个文件，而不是指向它的链接
-	if resolved, err := filepath.EvalSymlinks(currentExe); err == nil {
-		currentExe = resolved
-	}
 	h.logUpdateProgress("info", fmt.Sprintf("当前程序路径: %s", currentExe))
-
-	// 提前验证程序目录是否可写：下载、解压、备份 rename 和替换 rename 都要
-	// 在这里落盘。目录不可写时立刻返回明确原因，而不是下载完几十 MB 才失败。
-	if err := executableDirWritable(currentExe); err != nil {
-		msg := describeWriteFailure(filepath.Dir(currentExe), err)
-		h.logUpdateProgress("error", msg)
-		return UpdateResult{
-			Success: false,
-			Message: msg,
-		}
-	}
 
 	// 下载新版本：保留下载文件的实际扩展名（.tar.gz / .zip），以便后续判断是否需要解压
 	archiveExt := ""
@@ -870,15 +859,13 @@ func (h *VersionHandler) detectDeploymentMethod() DeploymentInfo {
 		}
 	}
 
-	// 宿主机（非 Docker）一律按二进制部署处理。能否真正替换取决于运行用户
-	// 对程序目录的写权限，这一点由更新流程自己检查并把具体错误返回给前端，
-	// 不在这里提前禁用“立即更新”按钮（与主控更新卡片的逻辑一致）。
-	if h.isHostEnvironment() {
+	// 检查是否是宿主机二进制部署
+	if h.isHostEnvironment() && h.isBinaryDeployment() {
 		debugDetails := map[string]interface{}{
 			"is_docker_container":   false,
 			"has_docker_permission": false,
 			"is_host_environment":   true,
-			"is_binary_deployment":  h.isBinaryDeployment(),
+			"is_binary_deployment":  true,
 		}
 
 		manualUpdateInfo := "手动更新方式：\n\n" +
@@ -891,11 +878,11 @@ func (h *VersionHandler) detectDeploymentMethod() DeploymentInfo {
 		return DeploymentInfo{
 			Method:        "binary",
 			CanUpdate:     true,
-			UpdateInfo:    "宿主机二进制部署，支持更新",
+			UpdateInfo:    "宿主机二进制部署，支持自动更新",
 			ManualUpdate:  manualUpdateInfo,
 			HasDockerPerm: false,
 			Environment:   "host",
-			Details:       "将下载最新二进制文件并自动替换；若运行用户对程序目录没有写权限，会返回具体错误",
+			Details:       "将下载最新二进制文件并自动替换",
 			DebugInfo:     debugDetails,
 		}
 	}
@@ -957,65 +944,22 @@ func (h *VersionHandler) isHostEnvironment() bool {
 	return !h.isRunningInDocker()
 }
 
-// executableDirWritable 验证进程能在可执行文件所在目录创建文件。
-// 下载、解压、备份 rename 和替换 rename 都要求目录可写，这是自动更新的
-// 硬性前提；可执行文件自身的权限位并不能说明这一点。
-func executableDirWritable(executable string) error {
-	probe, err := os.CreateTemp(filepath.Dir(executable), ".nodepassdash-write-check-*")
-	if err != nil {
-		return err
-	}
-	name := probe.Name()
-	probe.Close()
-	_ = os.Remove(name)
-	return nil
-}
-
-// describeWriteFailure 把目录可写性探测的失败翻译成可执行的排查提示。
-//
-// EROFS（read-only file system）和 EACCES（权限不足）是两种完全不同的情况：
-// 前者是挂载点只读（systemd 单元开启了 ProtectSystem=strict / ReadOnlyPaths，
-// 或文件系统以 ro 挂载），root 权限同样无法绕过，改目录权限没有任何作用；
-// 后者才是运行用户没有写权限。混在一起提示会把排查引向错误方向。
-func describeWriteFailure(dir string, err error) string {
-	switch {
-	case errors.Is(err, syscall.EROFS):
-		return fmt.Sprintf("程序目录 %s 位于只读挂载点，无法写入（%v）。root 权限也无法绕过只读挂载："+
-			"若服务由 systemd 托管，请检查单元中的 ProtectSystem=strict / ReadOnlyPaths，并添加 ReadWritePaths=%s；"+
-			"若该目录所在文件系统本身以 ro 挂载（fstab 设置，或文件系统出错后被自动重挂为只读），"+
-			"请先在宿主机执行 mount -o remount,rw 恢复后重试（dmesg 可确认是否有重挂记录）", dir, err, dir)
-	case errors.Is(err, fs.ErrPermission):
-		return fmt.Sprintf("当前用户对程序目录 %s 没有写权限，无法自动更新: %v（请以 root 运行服务或调整目录权限）", dir, err)
-	default:
-		return fmt.Sprintf("无法在程序目录 %s 创建文件，自动更新要求该目录可写: %v", dir, err)
-	}
-}
-
-// isBinaryDeployment 检查是否是二进制部署。
-//
-// 自动更新会先在可执行文件所在目录里下载并解压，然后把当前二进制 rename 成
-// "<exe>.backup"、再把新文件 rename 到位。能否更新取决于**目录**是否可写，
-// 而不是可执行文件本身的写权限位（rename 只改目录项；服务以非 root 运行、
-// 二进制属于 root 时，模式位检查会误报可更新，随后在备份步骤失败）。
-// 这里直接在目标目录创建并删除一个临时文件来验证真实权限；结果只用于部署
-// 信息展示，不再阻止用户点击更新（失败时更新流程会返回具体原因）。
+// isBinaryDeployment 检查是否是二进制部署
 func (h *VersionHandler) isBinaryDeployment() bool {
 	// 检查当前可执行文件是否可写
 	executable, err := os.Executable()
 	if err != nil {
 		return false
 	}
-	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
-		executable = resolved
-	}
 
 	// 检查文件权限
 	info, err := os.Stat(executable)
-	if err != nil || info.IsDir() {
+	if err != nil {
 		return false
 	}
 
-	return executableDirWritable(executable) == nil
+	// 检查是否有写权限（简单检查）
+	return info.Mode().Perm()&0200 != 0
 }
 
 // getBinaryDownloadURL 获取二进制文件下载 URL（含代理前缀）
