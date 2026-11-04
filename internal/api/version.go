@@ -644,7 +644,6 @@ func (h *VersionHandler) performBinaryReplace(latest *GitHubRelease, isDocker bo
 			Message: fmt.Sprintf("获取当前执行文件路径失败: %v", err),
 		}
 	}
-
 	h.logUpdateProgress("info", fmt.Sprintf("当前程序路径: %s", currentExe))
 
 	// 下载新版本：保留下载文件的实际扩展名（.tar.gz / .zip），以便后续判断是否需要解压
