@@ -424,16 +424,9 @@ func (h *VersionHandler) HandleGetDeploymentInfo(c *gin.Context) {
 
 // HandleAutoUpdate 自动更新
 func (h *VersionHandler) HandleAutoUpdate(c *gin.Context) {
-	// 检测部署方式
+	// 检测部署方式。这里不再因为 canUpdate=false 直接拒绝：能否写入要等
+	// 更新流程实际检查，失败原因通过 updateError 返回给前端展示。
 	deployInfo := h.detectDeploymentMethod()
-
-	if !deployInfo.CanUpdate {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "当前部署方式不支持自动更新",
-		})
-		return
-	}
 
 	// 解析请求体获取更新通道（stable / beta）
 	var req struct {

@@ -36,6 +36,7 @@ interface CurrentVersion {
   current: string;
   restartPending?: boolean;
   pendingVersion?: string;
+  updateError?: string;
 }
 
 type UpdateState =
@@ -275,6 +276,13 @@ export function UpdateChip() {
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 2000));
         const cur = await fetchCurrent();
+        // 后端把异步更新的失败原因放在 updateError;直接展示,不要等到超时
+        if (cur?.updateError) {
+          stopProgressSSE();
+          setErrorMsg(cur.updateError);
+          setState("error");
+          return;
+        }
         if (cur?.restartPending) {
           stopProgressSSE();
           setState("update-complete");
