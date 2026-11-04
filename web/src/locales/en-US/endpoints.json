@@ -323,6 +323,26 @@
       "updatedAt": "Updated At: ",
       "lastCheck": "Last Check: "
     },
+    "update": {
+      "title": "Version Update",
+      "description": "Check for and install a new master build from omoristation/nodepass",
+      "current": "Current",
+      "latest": "Latest",
+      "check": "Check for Updates",
+      "checking": "Checking",
+      "upToDate": "You are up to date",
+      "available": "Version {{version}} is available",
+      "update": "Update Now",
+      "updating": "Updating",
+      "downloading": "Downloading the new version...",
+      "installing": "Replacing the binary...",
+      "done": "Update complete",
+      "needRestart": "The new binary is in place. Restart the master to load it (this restarts all instances).",
+      "failed": "Update failed",
+      "unsupported": "This release has no binary for the current OS/arch",
+      "releaseNotes": "Release notes",
+      "timeout": "Timed out waiting for the update; check the master later"
+    },
     "instances": {
       "title": "Endpoint Instances",
       "noData": "No instance data",

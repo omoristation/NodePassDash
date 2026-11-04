@@ -32,7 +32,7 @@ KEY_PATH=""
 VERSION_TYPE="stable"  # stable 或 beta
 
 # GitHub 仓库信息
-GITHUB_REPO="NodePassProject/NodePassDash"
+GITHUB_REPO="omoristation/NodePassDash"
 GITHUB_API="https://api.github.com/repos/${GITHUB_REPO}"
 
 # 日志函数
@@ -591,7 +591,7 @@ create_systemd_service() {
     cat > /etc/systemd/system/$SERVICE_NAME.service << EOF
 [Unit]
 Description=NodePassDash - NodePass Management Dashboard
-Documentation=https://github.com/NodePassProject/NodePassDash
+Documentation=https://github.com/omoristation/NodePassDash
 After=network.target
 Wants=network-online.target
 
@@ -737,9 +737,9 @@ switch_version() {
     # 使用安装脚本进行切换
     echo "开始切换版本..."
     if [[ "$target_type" == "beta" ]]; then
-        curl -fsSL https://raw.githubusercontent.com/NodePassProject/NodePassDash/main/scripts/install.sh | sudo bash -s -- install --beta --non-interactive
+        curl -fsSL https://raw.githubusercontent.com/omoristation/NodePassDash/main/scripts/install.sh | sudo bash -s -- install --beta --non-interactive
     else
-        curl -fsSL https://raw.githubusercontent.com/NodePassProject/NodePassDash/main/scripts/install.sh | sudo bash -s -- install --non-interactive
+        curl -fsSL https://raw.githubusercontent.com/omoristation/NodePassDash/main/scripts/install.sh | sudo bash -s -- install --non-interactive
     fi
 }
 
@@ -770,7 +770,7 @@ case "$1" in
         ;;
     update)
         echo "更新 NodePassDash..."
-        curl -fsSL https://raw.githubusercontent.com/NodePassProject/NodePassDash/main/scripts/install.sh | sudo bash
+        curl -fsSL https://raw.githubusercontent.com/omoristation/NodePassDash/main/scripts/install.sh | sudo bash
         ;;
     config)
         show_config
@@ -945,12 +945,12 @@ show_result() {
     echo "   journalctl -u nodepassdash | grep -A 6 '系统初始化完成'"
     echo
     echo "📚 文档链接:"
-    echo "   GitHub: https://github.com/NodePassProject/NodePassDash"
-    echo "   二进制部署文档(EN): https://github.com/NodePassProject/NodePassDash/blob/main/docs/en/BINARY.md"
-    echo "   二进制部署文档(中文): https://github.com/NodePassProject/NodePassDash/blob/main/docs/zh-CN/BINARY.md"
+    echo "   GitHub: https://github.com/omoristation/NodePassDash"
+    echo "   二进制部署文档(EN): https://github.com/omoristation/NodePassDash/blob/main/docs/en/BINARY.md"
+    echo "   二进制部署文档(中文): https://github.com/omoristation/NodePassDash/blob/main/docs/zh-CN/BINARY.md"
     echo
     echo "❓ 如需帮助，请访问:"
-    echo "   Issues: https://github.com/NodePassProject/NodePassDash/issues"
+    echo "   Issues: https://github.com/omoristation/NodePassDash/issues"
     echo "   Telegram: https://t.me/NodePassGroup"
     echo "=========================================="
 }

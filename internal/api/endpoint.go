@@ -62,6 +62,10 @@ func SetupEndpointRoutes(rg *gin.RouterGroup, endpointService *endpoint.Service,
 	rg.POST("/endpoints/:id/tcping", endpointHandler.HandleTCPing)
 	rg.POST("/endpoints/:id/network-debug", endpointHandler.HandleNetworkDebug)
 	rg.POST("/endpoints/:id/test-connection", endpointHandler.HandleTestConnection)
+	// 主控自更新：检查版本、触发替换、查询进度
+	rg.GET("/endpoints/:id/update/check", endpointHandler.HandleCheckEndpointUpdate)
+	rg.POST("/endpoints/:id/update/apply", endpointHandler.HandleApplyEndpointUpdate)
+	rg.GET("/endpoints/:id/update/status", endpointHandler.HandleGetEndpointUpdateStatus)
 }
 
 // HandleGetEndpoints 获取端点列表

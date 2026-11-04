@@ -65,6 +65,7 @@ import { OSIcon } from "@/components/ui/os-icon";
 import { useSettings } from "@/components/providers/settings-provider";
 import SystemStatsCharts from "@/components/ui/system-stats-charts";
 import NetworkDebugModal from "@/components/ui/network-debug-modal";
+import { EndpointUpdateCard } from "@/components/endpoints/endpoint-update-card";
 
 // 主控详情接口定义
 interface EndpointDetail {
@@ -1759,6 +1760,14 @@ export default function EndpointDetailPage() {
             </div>
           </CardBody>
         </Card>
+      )}
+
+      {/* 版本更新 */}
+      {endpointDetail && (
+        <EndpointUpdateCard
+          currentVersion={endpointDetail.ver}
+          endpointId={endpointId ? Number(endpointId) : null}
+        />
       )}
 
       {/* 实例列表 */}

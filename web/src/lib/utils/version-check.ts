@@ -62,7 +62,7 @@ export async function checkForUpdates(currentVersion: string): Promise<VersionIn
   try {
     // 获取最新的正式版本
     const response = await fetch(
-      'https://api.github.com/repos/NodePassProject/NodePassDash/releases/latest',
+      'https://api.github.com/repos/omoristation/NodePassDash/releases/latest',
       {
         headers: {
           'Accept': 'application/vnd.github.v3+json',

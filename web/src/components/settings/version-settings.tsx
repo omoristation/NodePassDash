@@ -482,7 +482,7 @@ export default function VersionSettings() {
                     <div className="mt-2 p-2 bg-black text-green-400 rounded font-mono text-xs overflow-x-auto">
                       <div>{t("version.updateInstructions.docker.pull")}</div>
                       <div>
-                        docker pull ghcr.io/nodepassproject/nodepassdash:latest
+                        docker pull ghcr.io/omoristation/nodepassdash:latest
                       </div>
                       <div className="mt-1">{t("version.updateInstructions.docker.restart")}</div>
                       <div>docker-compose down && docker-compose up -d</div>

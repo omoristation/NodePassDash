@@ -547,7 +547,7 @@ func (h *VersionHandler) selectProxy() string {
 		return proxy
 	}
 
-	probeTarget := "https://github.com/NodePassProject/NodePassDash/releases/latest"
+	probeTarget := "https://github.com/omoristation/NodePassDash/releases/latest"
 
 	type candidate struct {
 		name  string
@@ -813,7 +813,7 @@ func (h *VersionHandler) detectDeploymentMethod() DeploymentInfo {
 	// 检查是否在 Docker 容器中运行
 	if h.isRunningInDocker() {
 		manualUpdateInfo := "若自动更新失败，可在宿主机执行：\n\n" +
-			"1. docker pull ghcr.io/nodepassproject/nodepassdash:latest\n" +
+			"1. docker pull ghcr.io/omoristation/nodepassdash:latest\n" +
 			"2. docker restart <容器名称>\n\n" +
 			"或使用 docker-compose：\n" +
 			"   docker-compose pull && docker-compose up -d"
@@ -841,7 +841,7 @@ func (h *VersionHandler) detectDeploymentMethod() DeploymentInfo {
 
 		manualUpdateInfo := "手动更新方式：\n\n" +
 			"1. 从 GitHub 下载最新版本：\n" +
-			"   https://github.com/NodePassProject/NodePassDash/releases/latest\n\n" +
+			"   https://github.com/omoristation/NodePassDash/releases/latest\n\n" +
 			"2. 停止当前程序\n\n" +
 			"3. 替换二进制文件\n\n" +
 			"4. 重新启动程序"
@@ -869,11 +869,11 @@ func (h *VersionHandler) detectDeploymentMethod() DeploymentInfo {
 
 	manualUpdateInfo := "手动更新方式：\n\n" +
 		"1. Docker 部署：\n" +
-		"   docker pull ghcr.io/nodepassproject/nodepassdash:latest\n" +
+		"   docker pull ghcr.io/omoristation/nodepassdash:latest\n" +
 		"   docker restart <容器名称>\n\n" +
 		"2. 二进制部署：\n" +
 		"   从 GitHub 下载最新版本并替换文件\n" +
-		"   https://github.com/NodePassProject/NodePassDash/releases/latest"
+		"   https://github.com/omoristation/NodePassDash/releases/latest"
 
 	return DeploymentInfo{
 		Method:        "unknown",
@@ -982,7 +982,7 @@ func (h *VersionHandler) getBinaryDownloadURL(version, proxy string) string {
 		return ""
 	}
 
-	rawURL := fmt.Sprintf("https://github.com/NodePassProject/NodePassDash/releases/download/%s/%s", version, filename)
+	rawURL := fmt.Sprintf("https://github.com/omoristation/NodePassDash/releases/download/%s/%s", version, filename)
 	return applyGitHubProxy(proxy, rawURL)
 }
 
@@ -1084,7 +1084,7 @@ func (h *VersionHandler) downloadWithProgress(src io.Reader, dst io.Writer, tota
 
 // getLatestRelease 从 GitHub API 获取最新发布信息
 func (h *VersionHandler) getLatestRelease(proxy string) (*GitHubRelease, error) {
-	apiURL := applyGitHubProxy(proxy, "https://api.github.com/repos/NodePassProject/NodePassDash/releases/latest")
+	apiURL := applyGitHubProxy(proxy, "https://api.github.com/repos/omoristation/NodePassDash/releases/latest")
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Get(apiURL)
@@ -1202,7 +1202,7 @@ func (h *VersionHandler) HandleGetReleaseHistory(c *gin.Context) {
 
 // getReleaseHistory 从 GitHub API 获取版本发布历史
 func (h *VersionHandler) getReleaseHistory(proxy string) ([]GitHubRelease, error) {
-	apiURL := applyGitHubProxy(proxy, "https://api.github.com/repos/NodePassProject/NodePassDash/releases?per_page=10")
+	apiURL := applyGitHubProxy(proxy, "https://api.github.com/repos/omoristation/NodePassDash/releases?per_page=10")
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Get(apiURL)

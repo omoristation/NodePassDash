@@ -64,7 +64,7 @@ export default function VersionHistoryPage() {
   // 打开 GitHub 发布页面
   const openGitHubRelease = () => {
     window.open(
-      "https://github.com/NodePassProject/NodePassDash/releases",
+      "https://github.com/omoristation/NodePassDash/releases",
       "_blank",
     );
   };
@@ -209,7 +209,7 @@ export default function VersionHistoryPage() {
                       variant="flat"
                       onPress={() =>
                         window.open(
-                          `https://github.com/NodePassProject/NodePassDash/releases/tag/${release.tag_name}`,
+                          `https://github.com/omoristation/NodePassDash/releases/tag/${release.tag_name}`,
                           "_blank",
                         )
                       }
@@ -247,7 +247,7 @@ export default function VersionHistoryPage() {
           variant="flat"
           onPress={() =>
             window.open(
-              "https://github.com/NodePassProject/NodePassDash/releases",
+              "https://github.com/omoristation/NodePassDash/releases",
               "_blank",
             )
           }
