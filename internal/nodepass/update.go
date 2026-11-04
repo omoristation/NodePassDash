@@ -23,15 +23,15 @@ type EndpointUpdateCheck struct {
 	Message     string `json:"message,omitempty"`
 }
 
-// EndpointUpdateStatus 是主控 /update/status 的返回结果。
+// EndpointUpdateStatus 是主控 /update/status 的返回结果。主控在替换二进制
+// 后会自动重启，因此 phase 会经过 "restarting"，重启完成后变为 "done"。
 type EndpointUpdateStatus struct {
-	Running     bool   `json:"running"`
-	Phase       string `json:"phase"`
-	Message     string `json:"message,omitempty"`
-	Current     string `json:"current"`
-	Latest      string `json:"latest,omitempty"`
-	Previous    string `json:"previous,omitempty"`
-	NeedRestart bool   `json:"needRestart"`
+	Running  bool   `json:"running"`
+	Phase    string `json:"phase"`
+	Message  string `json:"message,omitempty"`
+	Current  string `json:"current"`
+	Latest   string `json:"latest,omitempty"`
+	Previous string `json:"previous,omitempty"`
 }
 
 // updateClient 与 createRestyClient 等价，但把超时放宽到 30s：主控检查

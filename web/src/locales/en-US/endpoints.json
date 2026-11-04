@@ -337,7 +337,7 @@
       "downloading": "Downloading the new version...",
       "installing": "Replacing the binary...",
       "done": "Update complete",
-      "needRestart": "The new binary is in place. Restart the master to load it (this restarts all instances).",
+      "restarting": "Restarting the master automatically...",
       "failed": "Update failed",
       "unsupported": "This release has no binary for the current OS/arch",
       "releaseNotes": "Release notes",

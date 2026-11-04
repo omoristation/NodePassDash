@@ -25,7 +25,6 @@ interface UpdateProgress {
   current: string;
   latest?: string;
   previous?: string;
-  needRestart: boolean;
 }
 
 interface EndpointUpdateCardProps {
@@ -37,8 +36,9 @@ interface EndpointUpdateCardProps {
  * 主控（NodePass master）版本更新卡片。
  *
  * 检查与更新都通过面板后端转发到主控的 /update/* 接口，浏览器不接触主控
- * 的 API Key。更新只替换主控主机上的二进制文件，进程需要重启才会加载新
- * 版本；重启会同时重启该主控管理的所有实例，因此这里只提示，不代劳。
+ * 的 API Key。更新替换二进制后主控会自行重启（phase 经过 "restarting"
+ * 再到 "done"），重启会同时重启该主控管理的全部实例，这里持续轮询直到
+ * 主控以新版本恢复。
  */
 export function EndpointUpdateCard({
   endpointId,
@@ -101,12 +101,29 @@ export function EndpointUpdateCard({
         const json = await res.json().catch(() => ({}));
 
         if (res.ok && json.success && json.data) {
-          setProgress(json.data);
-          if (!json.data.running) {
+          const status = json.data as UpdateProgress;
+          setProgress(status);
+          // "restarting" 期间主控正在退出（请求可能短暂失败），继续轮询，
+          // 直到它以新版本回来并报告 "done"。
+          if (!status.running && status.phase !== "restarting") {
             stopPolling();
             setApplying(false);
-            if (json.data.phase === "error") {
-              setError(json.data.message || t("details.update.failed"));
+            if (status.phase === "error") {
+              setError(status.message || t("details.update.failed"));
+            } else if (status.phase === "done") {
+              // 更新已完成并重启：当前版本换成主控报告的新版本，清除待更新
+              // 状态，避免卡片继续显示“发现新版本”。
+              setResult((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      current: status.current || prev.current,
+                      latest: status.latest || prev.latest,
+                      hasUpdate: false,
+                      message: undefined,
+                    }
+                  : prev,
+              );
             }
           }
         }
@@ -162,7 +179,7 @@ export function EndpointUpdateCard({
 
         if (cancelled || !res.ok || !json.success || !json.data) return;
         const status = json.data as UpdateProgress;
-        if (status.running) {
+        if (status.running || status.phase === "restarting") {
           setProgress(status);
           setApplying(true);
           startPolling();
@@ -193,6 +210,8 @@ export function EndpointUpdateCard({
         return t("details.update.downloading");
       case "installing":
         return t("details.update.installing");
+      case "restarting":
+        return t("details.update.restarting");
       case "done":
         return t("details.update.done");
       default:
@@ -228,7 +247,7 @@ export function EndpointUpdateCard({
             {t("details.update.current")}:
           </span>
           <Chip color="secondary" size="sm" variant="flat">
-            {result?.current || currentVersion || "—"}
+            {progress?.current || result?.current || currentVersion || "—"}
           </Chip>
           {result?.latest && (
             <Chip
@@ -265,11 +284,7 @@ export function EndpointUpdateCard({
             <div className="flex items-center gap-3 flex-wrap">
               <Button
                 color="primary"
-                isDisabled={
-                  !result.supported ||
-                  running ||
-                  progress?.needRestart === true
-                }
+                isDisabled={!result.supported || running}
                 isLoading={running}
                 size="sm"
                 startContent={
@@ -302,12 +317,6 @@ export function EndpointUpdateCard({
               {running && <Spinner size="sm" />}
               <span>{phaseText}</span>
             </div>
-            {progress.needRestart && !progress.running && (
-              <p className="flex items-center gap-1 text-sm text-success">
-                <Icon icon="solar:refresh-bold" width={16} />
-                {t("details.update.needRestart")}
-              </p>
-            )}
           </div>
         )}
 

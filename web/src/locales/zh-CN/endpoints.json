@@ -337,7 +337,7 @@
       "downloading": "正在下载新版本...",
       "installing": "正在替换程序文件...",
       "done": "更新完成",
-      "needRestart": "新版本已就位，请手动重启主控以生效（重启会重建全部实例）",
+      "restarting": "正在自动重启主控，请稍候...",
       "failed": "更新失败",
       "unsupported": "该版本没有适用于当前系统架构的二进制文件",
       "releaseNotes": "查看发布说明",
