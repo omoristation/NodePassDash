@@ -367,7 +367,7 @@ func (h *VersionHandler) HandleCheckUpdate(c *gin.Context) {
 		if release.Draft {
 			continue // 跳过草稿版本
 		}
-		
+
 		if release.Prerelease {
 			// 这是测试版
 			if betaRelease == nil {
@@ -379,7 +379,7 @@ func (h *VersionHandler) HandleCheckUpdate(c *gin.Context) {
 				stableRelease = &release
 			}
 		}
-		
+
 		// 如果都找到了，可以提前结束
 		if stableRelease != nil && betaRelease != nil {
 			break
@@ -644,7 +644,23 @@ func (h *VersionHandler) performBinaryReplace(latest *GitHubRelease, isDocker bo
 			Message: fmt.Sprintf("获取当前执行文件路径失败: %v", err),
 		}
 	}
+
+	// 解析软链接：更新的应是服务实际启动的那个文件，而不是指向它的链接
+	if resolved, err := filepath.EvalSymlinks(currentExe); err == nil {
+		currentExe = resolved
+	}
 	h.logUpdateProgress("info", fmt.Sprintf("当前程序路径: %s", currentExe))
+
+	// 提前验证程序目录是否可写：下载、解压、备份 rename 和替换 rename 都要
+	// 在这里落盘。目录不可写时立刻返回明确原因，而不是下载完几十 MB 才失败。
+	if err := executableDirWritable(currentExe); err != nil {
+		msg := fmt.Sprintf("当前用户对程序目录 %s 没有写权限，无法自动更新: %v（请以 root 运行服务或调整目录权限）", filepath.Dir(currentExe), err)
+		h.logUpdateProgress("error", msg)
+		return UpdateResult{
+			Success: false,
+			Message: msg,
+		}
+	}
 
 	// 下载新版本：保留下载文件的实际扩展名（.tar.gz / .zip），以便后续判断是否需要解压
 	archiveExt := ""
@@ -858,13 +874,15 @@ func (h *VersionHandler) detectDeploymentMethod() DeploymentInfo {
 		}
 	}
 
-	// 检查是否是宿主机二进制部署
-	if h.isHostEnvironment() && h.isBinaryDeployment() {
+	// 宿主机（非 Docker）一律按二进制部署处理。能否真正替换取决于运行用户
+	// 对程序目录的写权限，这一点由更新流程自己检查并把具体错误返回给前端，
+	// 不在这里提前禁用“立即更新”按钮（与主控更新卡片的逻辑一致）。
+	if h.isHostEnvironment() {
 		debugDetails := map[string]interface{}{
 			"is_docker_container":   false,
 			"has_docker_permission": false,
 			"is_host_environment":   true,
-			"is_binary_deployment":  true,
+			"is_binary_deployment":  h.isBinaryDeployment(),
 		}
 
 		manualUpdateInfo := "手动更新方式：\n\n" +
@@ -877,11 +895,11 @@ func (h *VersionHandler) detectDeploymentMethod() DeploymentInfo {
 		return DeploymentInfo{
 			Method:        "binary",
 			CanUpdate:     true,
-			UpdateInfo:    "宿主机二进制部署，支持自动更新",
+			UpdateInfo:    "宿主机二进制部署，支持更新",
 			ManualUpdate:  manualUpdateInfo,
 			HasDockerPerm: false,
 			Environment:   "host",
-			Details:       "将下载最新二进制文件并自动替换",
+			Details:       "将下载最新二进制文件并自动替换；若运行用户对程序目录没有写权限，会返回具体错误",
 			DebugInfo:     debugDetails,
 		}
 	}
@@ -943,13 +961,28 @@ func (h *VersionHandler) isHostEnvironment() bool {
 	return !h.isRunningInDocker()
 }
 
+// executableDirWritable 验证进程能在可执行文件所在目录创建文件。
+// 下载、解压、备份 rename 和替换 rename 都要求目录可写，这是自动更新的
+// 硬性前提；可执行文件自身的权限位并不能说明这一点。
+func executableDirWritable(executable string) error {
+	probe, err := os.CreateTemp(filepath.Dir(executable), ".nodepassdash-write-check-*")
+	if err != nil {
+		return err
+	}
+	name := probe.Name()
+	probe.Close()
+	_ = os.Remove(name)
+	return nil
+}
+
 // isBinaryDeployment 检查是否是二进制部署。
 //
 // 自动更新会先在可执行文件所在目录里下载并解压，然后把当前二进制 rename 成
 // "<exe>.backup"、再把新文件 rename 到位。能否更新取决于**目录**是否可写，
 // 而不是可执行文件本身的写权限位（rename 只改目录项；服务以非 root 运行、
 // 二进制属于 root 时，模式位检查会误报可更新，随后在备份步骤失败）。
-// 这里直接在目标目录创建并删除一个临时文件来验证真实权限。
+// 这里直接在目标目录创建并删除一个临时文件来验证真实权限；结果只用于部署
+// 信息展示，不再阻止用户点击更新（失败时更新流程会返回具体原因）。
 func (h *VersionHandler) isBinaryDeployment() bool {
 	executable, err := os.Executable()
 	if err != nil {
@@ -964,14 +997,7 @@ func (h *VersionHandler) isBinaryDeployment() bool {
 		return false
 	}
 
-	probe, err := os.CreateTemp(filepath.Dir(executable), ".nodepassdash-write-check-*")
-	if err != nil {
-		return false
-	}
-	probeName := probe.Name()
-	probe.Close()
-	_ = os.Remove(probeName)
-	return true
+	return executableDirWritable(executable) == nil
 }
 
 // getBinaryDownloadURL 获取二进制文件下载 URL（含代理前缀）

@@ -433,46 +433,33 @@ export default function VersionSettings() {
                     )
                   ) : (
                     <>
-                      {updateInfo?.hasStableUpdate &&
-                        updateInfo.stable &&
-                        deploymentInfo.canUpdate && (
-                          <Button
-                            color="primary"
-                            isLoading={updating}
-                            size="sm"
-                            startContent={
-                              <Icon icon="solar:rocket-bold" width={18} />
-                            }
-                            onPress={() => performAutoUpdate("stable")}
-                          >
-                            {t("version.deployment.autoUpdateStable")}
-                          </Button>
-                        )}
-                      {updateInfo?.hasBetaUpdate &&
-                        updateInfo.beta &&
-                        deploymentInfo.canUpdate && (
-                          <Button
-                            color="warning"
-                            isLoading={updating}
-                            size="sm"
-                            startContent={
-                              <Icon icon="solar:rocket-bold" width={18} />
-                            }
-                            onPress={() => performAutoUpdate("beta")}
-                          >
-                            {t("version.deployment.autoUpdateBeta")}
-                          </Button>
-                        )}
-                      {!deploymentInfo.canUpdate && (
+                      {/* 与主控更新卡片一致：检测到新版本就显示可点击的更新按钮，
+                          不再用部署检测结果提前禁用；能否写入由后端在更新时
+                          返回具体错误（updateError）。 */}
+                      {updateInfo?.hasStableUpdate && updateInfo.stable && (
                         <Button
-                          isDisabled
+                          color="primary"
+                          isLoading={updating}
                           size="sm"
                           startContent={
-                            <Icon icon="lucide:terminal" width={18} />
+                            <Icon icon="solar:rocket-bold" width={18} />
                           }
-                          variant="flat"
+                          onPress={() => performAutoUpdate("stable")}
                         >
-                          {t("version.deployment.manualUpdate")}
+                          {t("version.deployment.autoUpdateStable")}
+                        </Button>
+                      )}
+                      {updateInfo?.hasBetaUpdate && updateInfo.beta && (
+                        <Button
+                          color="warning"
+                          isLoading={updating}
+                          size="sm"
+                          startContent={
+                            <Icon icon="solar:rocket-bold" width={18} />
+                          }
+                          onPress={() => performAutoUpdate("beta")}
+                        >
+                          {t("version.deployment.autoUpdateBeta")}
                         </Button>
                       )}
                     </>
