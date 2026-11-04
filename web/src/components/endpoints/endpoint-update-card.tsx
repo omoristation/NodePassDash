@@ -36,9 +36,11 @@ interface EndpointUpdateCardProps {
  * 主控（NodePass master）版本更新卡片。
  *
  * 检查与更新都通过面板后端转发到主控的 /update/* 接口，浏览器不接触主控
- * 的 API Key。更新替换二进制后主控会自行重启（phase 经过 "restarting"
- * 再到 "done"），重启会同时重启该主控管理的全部实例，这里持续轮询直到
- * 主控以新版本恢复。
+ * 的 API Key。替换二进制后主控会主动退出，由 supervisor（systemd
+ * Restart=always / Docker restart 策略）拉起新版本，重启会同时重启该主控
+ * 管理的全部实例。这里持续轮询直到主控以新版本恢复：新版本退出前报告
+ * "done"，重启后状态回到 "idle"（更新状态是内存态）并带上新的版本号；
+ * 旧版本则会经过 "restarting" 再到 "done"。
  */
 export function EndpointUpdateCard({
   endpointId,
@@ -52,6 +54,8 @@ export function EndpointUpdateCard({
   const [progress, setProgress] = useState<UpdateProgress | null>(null);
   const [error, setError] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // 触发更新前的版本号，用来区分“主控重启后换成了新版本”还是“原版本重启”
+  const fromVersionRef = useRef("");
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -104,15 +108,16 @@ export function EndpointUpdateCard({
           const status = json.data as UpdateProgress;
           setProgress(status);
           // "restarting" 期间主控正在退出（请求可能短暂失败），继续轮询，
-          // 直到它以新版本回来并报告 "done"。
+          // 直到它以新版本回来并报告 "done"；新版本主控退出前报告 "done"，
+          // 重启后状态归零为 "idle" 且 current 已是新版本号。
           if (!status.running && status.phase !== "restarting") {
             stopPolling();
             setApplying(false);
             if (status.phase === "error") {
               setError(status.message || t("details.update.failed"));
             } else if (status.phase === "done") {
-              // 更新已完成并重启：当前版本换成主控报告的新版本，清除待更新
-              // 状态，避免卡片继续显示“发现新版本”。
+              // 更新已完成：当前版本换成主控报告的新版本，清除待更新状态，
+              // 避免卡片继续显示“发现新版本”。
               setResult((prev) =>
                 prev
                   ? {
@@ -124,6 +129,27 @@ export function EndpointUpdateCard({
                     }
                   : prev,
               );
+            } else if (
+              status.phase === "idle" &&
+              status.current &&
+              status.current !== fromVersionRef.current
+            ) {
+              // 主控已被 supervisor 以新版本拉起：更新状态是内存态，重启后
+              // 回到 idle，只能通过版本号变化判断更新成功。
+              setResult((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      current: status.current,
+                      latest: status.latest || prev.latest,
+                      hasUpdate: false,
+                      message: undefined,
+                    }
+                  : prev,
+              );
+            } else if (status.phase === "idle") {
+              // 主控重启了但版本没变：退出前更新并未完成（例如下载失败）。
+              setError(status.message || t("details.update.failed"));
             }
           }
         }
@@ -141,6 +167,7 @@ export function EndpointUpdateCard({
 
   const handleApply = useCallback(async () => {
     if (!endpointId) return;
+    fromVersionRef.current = result?.current || currentVersion || "";
     setApplying(true);
     setError("");
     setProgress(null);
@@ -161,7 +188,7 @@ export function EndpointUpdateCard({
       setError(e instanceof Error ? e.message : String(e));
       setApplying(false);
     }
-  }, [endpointId, startPolling]);
+  }, [endpointId, result, currentVersion, startPolling]);
 
   // 进入页面时读取一次主控的更新状态：如果此前已经触发过更新（或刚完成
   // 尚未重启），这里接着展示，不必重新点检查。
@@ -180,6 +207,8 @@ export function EndpointUpdateCard({
         if (cancelled || !res.ok || !json.success || !json.data) return;
         const status = json.data as UpdateProgress;
         if (status.running || status.phase === "restarting") {
+          // 记录更新开始前的版本号，供重启后判断是否已换成新版本
+          fromVersionRef.current = status.current || currentVersion || "";
           setProgress(status);
           setApplying(true);
           startPolling();
@@ -197,7 +226,7 @@ export function EndpointUpdateCard({
     return () => {
       cancelled = true;
     };
-  }, [endpointId, startPolling, t]);
+  }, [endpointId, currentVersion, startPolling, t]);
 
   const running = applying || progress?.running === true;
 

@@ -40,6 +40,7 @@ type VersionHandler struct {
 	mu             sync.Mutex
 	restartPending bool   // 二进制已替换完成,等待用户触发重启
 	pendingVersion string // 已替换待生效的版本号
+	lastUpdateErr  string // 最近一次自动更新的失败原因,成功后清空
 
 	subsMu sync.RWMutex
 	subs   map[string]chan ProgressEvent // SSE 订阅者
@@ -99,6 +100,21 @@ func (h *VersionHandler) getRestartPending() (bool, string) {
 	return h.restartPending, h.pendingVersion
 }
 
+// setLastUpdateError 记录或清除最近一次自动更新的失败原因。更新是异步执行
+// 的,前端无法从 /auto-update 的响应里得知结果,只能轮询 /current 读取这里。
+func (h *VersionHandler) setLastUpdateError(msg string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.lastUpdateErr = msg
+}
+
+// getLastUpdateError 返回最近一次自动更新的失败原因(空字符串表示没有失败)。
+func (h *VersionHandler) getLastUpdateError() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.lastUpdateErr
+}
+
 // VersionInfo 版本信息结构
 type VersionInfo struct {
 	Current        string `json:"current"`
@@ -108,6 +124,7 @@ type VersionInfo struct {
 	BuildTime      string `json:"buildTime,omitempty"`
 	RestartPending bool   `json:"restartPending,omitempty"`
 	PendingVersion string `json:"pendingVersion,omitempty"`
+	UpdateError    string `json:"updateError,omitempty"`
 }
 
 // GitHubRelease GitHub 发布信息结构
@@ -212,14 +229,14 @@ func (h *VersionHandler) HandleUpdateProgress(c *gin.Context) {
 
 // DBInfo 数据库信息结构
 type DBInfo struct {
-	Driver   string `json:"driver"`             // "sqlite" | "postgres"
-	Version  string `json:"version"`            // 数据库服务端版本字符串
-	Database string `json:"database"`           // SQLite 文件路径或 PG 库名
-	Size     int64  `json:"size"`               // 字节数，仅 SQLite 有效
-	SizeText string `json:"sizeText"`           // 人类可读大小
-	Host     string `json:"host,omitempty"`     // PG host:port
-	WALMode  *bool  `json:"walMode,omitempty"`  // SQLite WAL 模式
-	Tables   int64  `json:"tables"`             // 表数量
+	Driver   string `json:"driver"`            // "sqlite" | "postgres"
+	Version  string `json:"version"`           // 数据库服务端版本字符串
+	Database string `json:"database"`          // SQLite 文件路径或 PG 库名
+	Size     int64  `json:"size"`              // 字节数，仅 SQLite 有效
+	SizeText string `json:"sizeText"`          // 人类可读大小
+	Host     string `json:"host,omitempty"`    // PG host:port
+	WALMode  *bool  `json:"walMode,omitempty"` // SQLite WAL 模式
+	Tables   int64  `json:"tables"`            // 表数量
 }
 
 // HandleGetDBInfo 返回当前数据库的简单信息
@@ -315,6 +332,7 @@ func (h *VersionHandler) HandleGetCurrentVersion(c *gin.Context) {
 		Arch:           runtime.GOARCH,
 		RestartPending: pending,
 		PendingVersion: pendingVer,
+		UpdateError:    h.getLastUpdateError(),
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -349,7 +367,7 @@ func (h *VersionHandler) HandleCheckUpdate(c *gin.Context) {
 		if release.Draft {
 			continue // 跳过草稿版本
 		}
-		
+
 		if release.Prerelease {
 			// 这是测试版
 			if betaRelease == nil {
@@ -361,7 +379,7 @@ func (h *VersionHandler) HandleCheckUpdate(c *gin.Context) {
 				stableRelease = &release
 			}
 		}
-		
+
 		// 如果都找到了，可以提前结束
 		if stableRelease != nil && betaRelease != nil {
 			break
@@ -427,6 +445,9 @@ func (h *VersionHandler) HandleAutoUpdate(c *gin.Context) {
 		releaseType = "stable"
 	}
 
+	// 同步清空上一次的失败原因,避免前端轮询到旧错误
+	h.setLastUpdateError("")
+
 	// 立即响应请求，避免阻塞
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -449,7 +470,9 @@ func (h *VersionHandler) performUpdateWithLogs(deploymentInfo DeploymentInfo, re
 	// 选择目标版本
 	latest, err := h.selectReleaseByType(releaseType, proxy)
 	if err != nil {
-		h.logUpdateProgress("error", fmt.Sprintf("获取目标版本失败: %v", err))
+		msg := fmt.Sprintf("获取目标版本失败: %v", err)
+		h.setLastUpdateError(msg)
+		h.logUpdateProgress("error", msg)
 		h.logUpdateProgress("complete", "更新流程结束")
 		return
 	}
@@ -464,8 +487,10 @@ func (h *VersionHandler) performUpdateWithLogs(deploymentInfo DeploymentInfo, re
 	}
 
 	if result.Success {
+		h.setLastUpdateError("")
 		h.logUpdateProgress("success", result.Message)
 	} else {
+		h.setLastUpdateError(result.Message)
 		h.logUpdateProgress("error", fmt.Sprintf("更新失败: %s", result.Message))
 	}
 
@@ -622,27 +647,6 @@ func (h *VersionHandler) performBinaryReplace(latest *GitHubRelease, isDocker bo
 	}
 	h.logUpdateProgress("info", fmt.Sprintf("当前程序路径: %s", currentExe))
 
-	// 备份当前文件：使用 os.Rename 而非复制
-	// Rename 仅修改目录项，不打开文件内容，因此在 Linux 上不会触发 ETXTBSY，
-	// 同时内核在进程关闭前会继续持有旧 inode，不影响当前运行。
-	backupPath := currentExe + ".backup"
-	h.logUpdateProgress("info", fmt.Sprintf("备份路径: %s", backupPath))
-	h.logUpdateProgress("info", "正在备份当前版本（rename）...")
-	_ = os.Remove(backupPath) // 清除可能存在的旧备份
-	if err := os.Rename(currentExe, backupPath); err != nil {
-		h.logUpdateProgress("error", fmt.Sprintf("备份当前版本失败: %v", err))
-		return UpdateResult{
-			Success: false,
-			Message: fmt.Sprintf("备份当前版本失败: %v", err),
-		}
-	}
-
-	if backupInfo, err := os.Stat(backupPath); err == nil {
-		h.logUpdateProgress("success", fmt.Sprintf("备份完成 (%.2f MB)", float64(backupInfo.Size())/1024/1024))
-	} else {
-		h.logUpdateProgress("success", "备份完成")
-	}
-
 	// 下载新版本：保留下载文件的实际扩展名（.tar.gz / .zip），以便后续判断是否需要解压
 	archiveExt := ""
 	switch {
@@ -679,6 +683,14 @@ func (h *VersionHandler) performBinaryReplace(latest *GitHubRelease, isDocker bo
 	// 解压（如为压缩包）
 	var extractedBinaryPath string
 	var extractDir string
+
+	// 下载与解压产生的临时文件在函数结束时统一清理；成功替换后它们已不存在。
+	defer func() {
+		os.Remove(tempPath)
+		if extractDir != "" {
+			os.RemoveAll(extractDir)
+		}
+	}()
 	if archiveExt == ".tar.gz" || archiveExt == ".zip" {
 		h.logUpdateProgress("info", "检测到压缩包格式，开始解压...")
 		extractDir = filepath.Join(filepath.Dir(tempPath), "extract_temp")
@@ -719,6 +731,28 @@ func (h *VersionHandler) performBinaryReplace(latest *GitHubRelease, isDocker bo
 			Success: false,
 			Message: "最终文件验证失败",
 		}
+	}
+
+	// 备份当前文件：使用 os.Rename 而非复制。
+	// 必须放在下载和解压全部成功之后：这样任何下载/解压/校验失败都不会让
+	// currentExe 从磁盘上消失（旧实现先备份后下载,失败后会只剩 .backup）。
+	// Rename 仅修改目录项，不打开文件内容，因此在 Linux 上不会触发 ETXTBSY，
+	// 同时内核在进程关闭前会继续持有旧 inode，不影响当前运行。
+	backupPath := currentExe + ".backup"
+	h.logUpdateProgress("info", fmt.Sprintf("备份路径: %s", backupPath))
+	h.logUpdateProgress("info", "正在备份当前版本（rename）...")
+	_ = os.Remove(backupPath) // 清除可能存在的旧备份
+	if err := os.Rename(currentExe, backupPath); err != nil {
+		h.logUpdateProgress("error", fmt.Sprintf("备份当前版本失败: %v", err))
+		return UpdateResult{
+			Success: false,
+			Message: fmt.Sprintf("备份当前版本失败: %v", err),
+		}
+	}
+	if backupInfo, err := os.Stat(backupPath); err == nil {
+		h.logUpdateProgress("success", fmt.Sprintf("备份完成 (%.2f MB)", float64(backupInfo.Size())/1024/1024))
+	} else {
+		h.logUpdateProgress("success", "备份完成")
 	}
 
 	// 替换当前程序：优先 rename（同一文件系统时 atomic 且无 ETXTBSY），
@@ -770,12 +804,7 @@ func (h *VersionHandler) performBinaryReplace(latest *GitHubRelease, isDocker bo
 		}
 	}
 
-	// 清理解压临时目录
-	if extractDir != "" {
-		os.Remove(extractedBinaryPath)
-		_ = os.RemoveAll(extractDir)
-	}
-
+	// 清理解压临时目录由上面的 defer 完成
 	h.logUpdateProgress("success", fmt.Sprintf("更新完成！版本: %s -> %s", Version, latest.TagName))
 	h.logUpdateProgress("info", fmt.Sprintf("备份文件保留在: %s", backupPath))
 	h.logUpdateProgress("info", "等待用户触发重启以加载新版本 (POST /api/version/restart)")
@@ -915,22 +944,35 @@ func (h *VersionHandler) isHostEnvironment() bool {
 	return !h.isRunningInDocker()
 }
 
-// isBinaryDeployment 检查是否是二进制部署
+// isBinaryDeployment 检查是否是二进制部署。
+//
+// 自动更新会先在可执行文件所在目录里下载并解压，然后把当前二进制 rename 成
+// "<exe>.backup"、再把新文件 rename 到位。能否更新取决于**目录**是否可写，
+// 而不是可执行文件本身的写权限位（rename 只改目录项；服务以非 root 运行、
+// 二进制属于 root 时，模式位检查会误报可更新，随后在备份步骤失败）。
+// 这里直接在目标目录创建并删除一个临时文件来验证真实权限。
 func (h *VersionHandler) isBinaryDeployment() bool {
-	// 检查当前可执行文件是否可写
 	executable, err := os.Executable()
 	if err != nil {
 		return false
 	}
+	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
+		executable = resolved
+	}
 
-	// 检查文件权限
 	info, err := os.Stat(executable)
-	if err != nil {
+	if err != nil || info.IsDir() {
 		return false
 	}
 
-	// 检查是否有写权限（简单检查）
-	return info.Mode().Perm()&0200 != 0
+	probe, err := os.CreateTemp(filepath.Dir(executable), ".nodepassdash-write-check-*")
+	if err != nil {
+		return false
+	}
+	probeName := probe.Name()
+	probe.Close()
+	_ = os.Remove(probeName)
+	return true
 }
 
 // getBinaryDownloadURL 获取二进制文件下载 URL（含代理前缀）
@@ -1156,8 +1198,9 @@ func parseVersion(v string) ([]int, int) {
 // 规则：先比对 major/minor/patch；base 相同时，正式版 > rc > beta > alpha，
 // 同类型再按编号比大小。
 // 例：current=v4.0.2, latest=v4.0.2-beta1 → 无更新（正式版 > beta）。
-//    current=v4.0.2-beta1, latest=v4.0.2-beta2 → 有更新。
-//    current=v4.0.2-beta1, latest=v4.0.2 → 有更新（正式版更高）。
+//
+//	current=v4.0.2-beta1, latest=v4.0.2-beta2 → 有更新。
+//	current=v4.0.2-beta1, latest=v4.0.2 → 有更新（正式版更高）。
 func (h *VersionHandler) compareVersions(current, latest string) bool {
 	current = strings.TrimPrefix(strings.TrimSpace(current), "v")
 	if current == "dev" || current == "" {

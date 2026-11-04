@@ -29,6 +29,7 @@ interface VersionInfo {
   buildTime?: string;
   restartPending?: boolean;
   pendingVersion?: string;
+  updateError?: string;
 }
 
 interface GitHubRelease {
@@ -193,6 +194,16 @@ export default function VersionSettings() {
           const cur = await fetch(buildApiUrl("/api/version/current"));
           if (cur.ok) {
             const j = await cur.json();
+            // 后端把异步更新的失败原因放在这里;直接展示真实原因,不要等到超时
+            if (j?.data?.updateError) {
+              alert(
+                t("version.alert.updateFailed", {
+                  error: j.data.updateError,
+                }),
+              );
+              setUpdating(false);
+              return;
+            }
             if (j?.data?.restartPending) {
               setRestartPending(true);
               setPendingVersion(j.data.pendingVersion ?? "");
